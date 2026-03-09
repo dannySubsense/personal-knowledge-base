@@ -48,6 +48,18 @@ class TestYouTubeFetcher:
         """Create a YouTubeFetcher instance for testing."""
         return YouTubeFetcher()
 
+    def test_get_api_caching(self, fetcher: YouTubeFetcher) -> None:
+        """Test that _get_api returns cached instance on second call."""
+        # First call creates the instance
+        api1 = fetcher._get_api()
+        assert api1 is not None
+        assert fetcher._transcript_api is not None
+
+        # Second call should return the same cached instance
+        api2 = fetcher._get_api()
+        assert api2 is api1  # Same object reference
+        assert fetcher._transcript_api is api1
+
     @pytest.fixture
     def mock_transcript_data(self) -> list[dict]:
         """Sample transcript data for mocking."""
@@ -269,6 +281,11 @@ class TestYouTubeFetcher:
 
         assert result.success is True
         assert result.title == "My Custom Title"
+        # Verify all other fields are preserved
+        assert result.url == url
+        assert result.content_type == "youtube"
+        assert "Hello everyone" in result.content
+        assert result.metadata["video_id"] == "dQw4w9WgXcQ"
 
     @patch.object(YouTubeFetcher, "_fetch_transcript")
     def test_fetch_with_title_no_title(
@@ -349,6 +366,56 @@ class TestYouTubeFetcher:
         url = "https://m.youtube.com/watch?v=dQw4w9WgXcQ"
         assert fetcher._extract_video_id(url) == "dQw4w9WgXcQ"
 
+    def test_extract_video_id_mobile_url_no_www(self, fetcher: YouTubeFetcher) -> None:
+        """Test extracting video ID from mobile URL without www."""
+        url = "https://m.youtube.com/watch?v=dQw4w9WgXcQ"
+        assert fetcher._extract_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_extract_video_id_query_param_fallback(self, fetcher: YouTubeFetcher) -> None:
+        """Test extracting video ID using query param fallback parsing."""
+        # URL that doesn't match regex patterns but has v= in query
+        url = "https://youtube.com/watch?feature=share&v=dQw4w9WgXcQ"
+        assert fetcher._extract_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_extract_video_id_youtube_com_no_www(self, fetcher: YouTubeFetcher) -> None:
+        """Test extracting video ID from youtube.com without www."""
+        url = "https://youtube.com/watch?v=dQw4w9WgXcQ"
+        assert fetcher._extract_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_extract_video_id_fallback_parsing(self, fetcher: YouTubeFetcher) -> None:
+        """Test extracting video ID using urlparse fallback (no regex match)."""
+        # URL that doesn't match regex patterns (no /watch?v= pattern)
+        # but has youtube.com domain with v= in query params
+        url = "https://youtube.com/other/path/here?v=dQw4w9WgXcQ"
+        assert fetcher._extract_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_extract_video_id_fallback_parsing_www(self, fetcher: YouTubeFetcher) -> None:
+        """Test fallback parsing with www.youtube.com domain."""
+        url = "https://www.youtube.com/other/path?v=dQw4w9WgXcQ"
+        assert fetcher._extract_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_extract_video_id_fallback_parsing_mobile(self, fetcher: YouTubeFetcher) -> None:
+        """Test fallback parsing with m.youtube.com mobile domain."""
+        url = "https://m.youtube.com/other/path?v=dQw4w9WgXcQ"
+        assert fetcher._extract_video_id(url) == "dQw4w9WgXcQ"
+
+    def test_extract_video_id_fallback_invalid_id_length(self, fetcher: YouTubeFetcher) -> None:
+        """Test fallback parsing returns None for invalid video ID length."""
+        url = "https://youtube.com/other/path?v=short"
+        assert fetcher._extract_video_id(url) is None
+
+    def test_extract_video_id_fallback_no_v_param(self, fetcher: YouTubeFetcher) -> None:
+        """Test fallback parsing returns None when no v param present."""
+        url = "https://youtube.com/other/path?feature=share"
+        assert fetcher._extract_video_id(url) is None
+
+    def test_extract_video_id_fallback_value_error(self, fetcher: YouTubeFetcher) -> None:
+        """Test fallback parsing handles ValueError from urlparse."""
+        # An invalid URL that triggers ValueError in urlparse
+        url = "://invalid-url"
+        result = fetcher._extract_video_id(url)
+        assert result is None
+
     @patch.object(YouTubeFetcher, "_fetch_transcript")
     def test_fetch_preserves_all_metadata(
         self,
@@ -386,3 +453,39 @@ class TestYouTubeFetcher:
         assert result.metadata["language"] == "English"
         assert result.metadata["language_code"] == "en"
         assert result.metadata["is_generated"] is False
+
+    def test_fetch_transcript_calls_get_api(self, fetcher: YouTubeFetcher) -> None:
+        """Test that _fetch_transcript calls _get_api and returns result."""
+        # Mock the API instance returned by _get_api
+        with patch.object(fetcher, "_get_api") as mock_get_api:
+            mock_api = MagicMock()
+            mock_transcript = create_mock_transcript(
+                [{"text": "Hello", "start": 0.0, "duration": 1.0}]
+            )
+            mock_api.fetch.return_value = mock_transcript
+            mock_get_api.return_value = mock_api
+
+            result = fetcher._fetch_transcript("dQw4w9WgXcQ")
+
+            # Verify _get_api was called
+            mock_get_api.assert_called_once()
+            # Verify api.fetch was called with video_id
+            mock_api.fetch.assert_called_once_with("dQw4w9WgXcQ")
+            # Verify the result is returned
+            assert result is mock_transcript
+
+    @patch.object(YouTubeFetcher, "_fetch_transcript")
+    def test_fetch_with_title_returns_original_on_failure(
+        self, mock_fetch: MagicMock, fetcher: YouTubeFetcher
+    ) -> None:
+        """Test fetch_with_title returns original result when fetch fails."""
+        from youtube_transcript_api._errors import VideoUnavailable
+
+        mock_fetch.side_effect = VideoUnavailable("")
+
+        url = "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+        result = fetcher.fetch_with_title(url, title="My Title")
+
+        # Should return the failed result (not the titled one)
+        assert result.success is False
+        assert "unavailable" in result.error_message.lower()
