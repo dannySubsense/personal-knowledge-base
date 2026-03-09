@@ -100,7 +100,6 @@ check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 show_error_codes = true
-mypy_path = "."
 
 [[tool.mypy.overrides]]
 module = [
