@@ -140,8 +140,8 @@ class Chunker:
             List of code blocks.
         """
         lines = text.split("\n")
-        blocks = []
-        current_block = []
+        blocks: list[str] = []
+        current_block: list[str] = []
 
         for line in lines:
             stripped = line.strip()
@@ -186,9 +186,9 @@ class Chunker:
         header_pattern = r"^(#{1,6}\s+.+)$"
         lines = text.split("\n")
 
-        sections = []
-        current_section = []
-        current_header = None
+        sections: list[tuple[str, str | None]] = []
+        current_section: list[str] = []
+        current_header: str | None = None
 
         for line in lines:
             header_match = re.match(header_pattern, line.strip())
@@ -229,8 +229,8 @@ class Chunker:
         if not units:
             return []
 
-        chunks = []
-        current_chunk_units = []
+        chunks: list[str] = []
+        current_chunk_units: list[str] = []
         current_token_count = 0
 
         for _i, unit in enumerate(units):
