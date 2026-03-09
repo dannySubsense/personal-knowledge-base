@@ -40,7 +40,7 @@ class Job:
         valid_statuses = ("pending", "processing", "done", "failed")
         if self.status not in valid_statuses:
             raise ValueError(f"Invalid status: {self.status}. Must be one of {valid_statuses}.")
-        valid_types = (None, "youtube", "pdf", "article", "image", "code")
+        valid_types = (None, "youtube", "pdf", "article", "image", "code", "code_repo")
         if self.content_type not in valid_types:
             raise ValueError(
                 f"Invalid content_type: {self.content_type}. "
