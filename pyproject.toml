@@ -113,7 +113,6 @@ module = [
     "PyPDF2.*",
     "pdfplumber.*",
     "trafilatura.*",
-    "requests.*",
 ]
 ignore_missing_imports = true
 
