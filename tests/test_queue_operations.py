@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+
 from personal_knowledge_base.queue.db import close_connection, init_db
 from personal_knowledge_base.queue.models import Job
 from personal_knowledge_base.queue.operations import (

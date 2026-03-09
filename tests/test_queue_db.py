@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 import pytest
+
 from personal_knowledge_base.queue.db import (
     close_connection,
     get_connection,
