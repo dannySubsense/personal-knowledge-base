@@ -158,18 +158,23 @@ class BatchProcessor:
             chunk_tuples = [(c.text, c.metadata) for c in chunks]
             embedding_results = asyncio.run(self._embed_chunks(chunk_tuples))
 
-            # 4. Classify to KB collection
-            classifier = ContentClassifier(
-                config=ClassifierConfig(
-                    ollama_url=self.config.ollama_url,
-                    embedding_model=self.config.embedding_model,
+            # 4. Classify to KB collection (respect explicit kb_name if set)
+            if job.kb_name:
+                collection_name = job.kb_name
+                logger.info("Using explicit KB assignment: %s", collection_name)
+            else:
+                classifier = ContentClassifier(
+                    config=ClassifierConfig(
+                        ollama_url=self.config.ollama_url,
+                        embedding_model=self.config.embedding_model,
+                    )
                 )
-            )
-            collection_name = classifier.classify(
-                url=job.url,
-                title=fetch_result.title,
-                description="",
-            )
+                collection_name = classifier.classify(
+                    url=job.url,
+                    title=fetch_result.title,
+                    description="",
+                )
+                logger.info("Classifier routed to KB: %s", collection_name)
 
             # 5. Store in Qdrant
             from personal_knowledge_base.storage.vector_store import (  # noqa: PLC0415

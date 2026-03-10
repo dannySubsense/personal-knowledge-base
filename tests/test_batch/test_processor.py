@@ -558,3 +558,90 @@ class TestFullPipelineSmoke:
         assert result.failed == 0
         assert result.skipped == 0
         mock_vs.upsert_embeddings.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# KB name respect tests (R4-D)
+# ---------------------------------------------------------------------------
+
+
+def test_process_job_uses_explicit_kb_name():
+    """Test that explicit kb_name is respected and classifier is NOT called."""
+    processor = BatchProcessor()
+
+    # Create job with explicit kb_name
+    job = _make_job(job_id="job-explicit", url="https://example.com/video")
+    job.kb_name = "agentic-coding"
+
+    embedding_results = [
+        EmbeddingResult(chunk_text="test", embedding_vector=[0.1] * 768, metadata={}),
+    ]
+
+    with (
+        patch.object(
+            processor,
+            "_get_fetcher",
+            return_value=MagicMock(fetch=MagicMock(return_value=_make_fetch_result())),
+        ),
+        patch.object(processor, "_embed_chunks", new_callable=AsyncMock) as mock_embed,
+        patch("personal_knowledge_base.batch.processor.ContentClassifier") as mock_classifier_cls,
+        patch("personal_knowledge_base.storage.vector_store.VectorStore") as mock_vs_cls,
+    ):
+        mock_embed.return_value = embedding_results
+        mock_vs = MagicMock()
+        mock_vs.__enter__ = MagicMock(return_value=mock_vs)
+        mock_vs.__exit__ = MagicMock(return_value=False)
+        mock_vs_cls.return_value = mock_vs
+
+        success = processor._process_job(job)
+
+        assert success is True
+        # Classifier should NOT be instantiated when kb_name is set
+        mock_classifier_cls.assert_not_called()
+        # VectorStore config should have the explicit kb_name as collection
+        mock_vs_cls.assert_called_once()
+        call_kwargs = mock_vs_cls.call_args.kwargs
+        assert call_kwargs["config"].collection_name == "agentic-coding"
+
+
+def test_process_job_calls_classifier_when_kb_name_none():
+    """Test that classifier is called when kb_name is None."""
+    processor = BatchProcessor()
+
+    # Create job without kb_name (None)
+    job = _make_job(job_id="job-classify", url="https://example.com/article")
+    job.kb_name = None
+
+    embedding_results = [
+        EmbeddingResult(chunk_text="test", embedding_vector=[0.1] * 768, metadata={}),
+    ]
+
+    with (
+        patch.object(
+            processor,
+            "_get_fetcher",
+            return_value=MagicMock(fetch=MagicMock(return_value=_make_fetch_result())),
+        ),
+        patch.object(processor, "_embed_chunks", new_callable=AsyncMock) as mock_embed,
+        patch("personal_knowledge_base.batch.processor.ContentClassifier") as mock_classifier_cls,
+        patch("personal_knowledge_base.storage.vector_store.VectorStore") as mock_vs_cls,
+    ):
+        mock_embed.return_value = embedding_results
+        mock_classifier = MagicMock()
+        mock_classifier.classify.return_value = "ml-ai"
+        mock_classifier_cls.return_value = mock_classifier
+        mock_vs = MagicMock()
+        mock_vs.__enter__ = MagicMock(return_value=mock_vs)
+        mock_vs.__exit__ = MagicMock(return_value=False)
+        mock_vs_cls.return_value = mock_vs
+
+        success = processor._process_job(job)
+
+        assert success is True
+        # Classifier SHOULD be instantiated and called
+        mock_classifier_cls.assert_called_once()
+        mock_classifier.classify.assert_called_once()
+        # VectorStore config should have the classifier result as collection
+        mock_vs_cls.assert_called_once()
+        call_kwargs = mock_vs_cls.call_args.kwargs
+        assert call_kwargs["config"].collection_name == "ml-ai"
