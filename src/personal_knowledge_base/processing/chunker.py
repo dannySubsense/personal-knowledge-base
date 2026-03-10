@@ -311,6 +311,14 @@ class Chunker:
                 )
             ]
 
+        # If we only have one paragraph (e.g. a YouTube transcript with no double newlines),
+        # fall back to sentence-level splitting so we don't produce one giant chunk that
+        # exceeds the embedding model's context window.
+        if len(paragraphs) == 1 and self._estimate_tokens(paragraphs[0]) > self.config.chunk_size:
+            sentences = self._split_into_sentences(text)
+            if len(sentences) > 1:
+                return self._create_chunks_from_units(sentences, source, overlap_units=2)
+
         return self._create_chunks_from_units(paragraphs, source, overlap_units=1)
 
     def _chunk_code(self, text: str, source: str) -> list[Chunk]:
