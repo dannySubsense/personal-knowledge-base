@@ -113,6 +113,8 @@ module = [
     "pdfplumber.*",
     "trafilatura.*",
     "qdrant_client.*",
+    "hdbscan.*",
+    "sklearn.*",
 ]
 ignore_missing_imports = true
 
