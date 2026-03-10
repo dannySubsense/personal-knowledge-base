@@ -1,0 +1,17 @@
+ollama:
+  model: nomic-embed-text
+  host: http://localhost:11434
+
+queue:
+  batch_interval_minutes: 15
+
+storage:
+  qdrant_url: http://localhost:6333
+  sqlite_path: ./data/sqlite/pkb.db
+
+# Chunking: chunk_size MUST stay under nomic-embed-text's ~512 token context limit.
+# See docs/adr/002-chunking-config-for-nomic-embed-text.md
+chunking:
+  chunk_size: 256
+  chunk_overlap: 200
+  min_chunk_size: 50

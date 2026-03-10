@@ -117,6 +117,13 @@ queue:
 storage:
   qdrant_url: http://localhost:6333
   sqlite_path: ./data/sqlite/pkb.db
+
+# chunk_size must stay ≤ 256 — nomic-embed-text context limit is ~512 tokens
+# See docs/adr/002-chunking-config-for-nomic-embed-text.md
+chunking:
+  chunk_size: 256
+  chunk_overlap: 200
+  min_chunk_size: 50
 ```
 
 ## Requirements

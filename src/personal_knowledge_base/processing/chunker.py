@@ -29,7 +29,7 @@ class ChunkingConfig:
         content_type: Type of content being chunked.
     """
 
-    chunk_size: int = 1000
+    chunk_size: int = 256  # nomic-embed-text context limit is ~512 tokens; 256 gives safe headroom
     chunk_overlap: int = 200
     min_chunk_size: int = 50
     respect_boundaries: bool = True
