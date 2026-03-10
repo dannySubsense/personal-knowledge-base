@@ -51,11 +51,11 @@ def test_query_config_custom() -> None:
     cfg = QueryConfig(
         qdrant_url="http://my-qdrant:6333",
         default_limit=5,
-        default_collection="papers",
+        default_collection="ml-ai",
     )
     assert cfg.qdrant_url == "http://my-qdrant:6333"
     assert cfg.default_limit == 5
-    assert cfg.default_collection == "papers"
+    assert cfg.default_collection == "ml-ai"
 
 
 # ---------------------------------------------------------------------------
@@ -69,14 +69,14 @@ def test_query_result_fields() -> None:
         score=0.9,
         source="path/to/file.pdf",
         doc_id="abc-123",
-        collection="papers",
+        collection="ml-ai",
         metadata={"page": 3},
     )
     assert result.chunk_text == "Some text"
     assert result.score == 0.9
     assert result.source == "path/to/file.pdf"
     assert result.doc_id == "abc-123"
-    assert result.collection == "papers"
+    assert result.collection == "ml-ai"
     assert result.metadata == {"page": 3}
 
 
@@ -168,16 +168,16 @@ def test_query_uses_default_collection(
     mock_vs_cls.return_value = mock_store
     mock_store.search.return_value = []
 
-    config = QueryConfig(default_collection="papers")
+    config = QueryConfig(default_collection="quant-trading")
     iface = KBQueryInterface(config=config)
     iface.query("test")
 
-    # VectorStore should be constructed with collection_name="papers"
+    # VectorStore should be constructed with collection_name="quant-trading"
     call_kwargs = mock_vs_cls.call_args
     vs_config = (
         call_kwargs[1]["config"] if "config" in (call_kwargs[1] or {}) else call_kwargs[0][0]
     )
-    assert vs_config.collection_name == "papers"
+    assert vs_config.collection_name == "quant-trading"
 
 
 @patch("personal_knowledge_base.interface.query.asyncio.run")
@@ -278,14 +278,12 @@ def test_query_all_collections_merges_and_reranks(
     def store_side_effect(config: Any) -> MagicMock:
         mock_store = MagicMock()
         col = config.collection_name
-        if col == "videos":
+        if col == "quant-trading":
             mock_store.search.return_value = [
-                make_search_result(chunk_text="video chunk", score=0.6)
+                make_search_result(chunk_text="quant chunk", score=0.6)
             ]
-        elif col == "papers":
-            mock_store.search.return_value = [
-                make_search_result(chunk_text="paper chunk", score=0.85)
-            ]
+        elif col == "ml-ai":
+            mock_store.search.return_value = [make_search_result(chunk_text="ml chunk", score=0.85)]
         else:
             mock_store.search.return_value = []
         return mock_store
@@ -293,13 +291,13 @@ def test_query_all_collections_merges_and_reranks(
     mock_vs_cls.side_effect = lambda config: store_side_effect(config)
 
     iface = KBQueryInterface()
-    results = iface.query_all_collections("test", collections=["videos", "papers"])
+    results = iface.query_all_collections("test", collections=["quant-trading", "ml-ai"])
 
     assert len(results) == 2
-    # Re-ranked: paper (0.85) before video (0.6)
-    assert results[0].chunk_text == "paper chunk"
+    # Re-ranked: ml-ai (0.85) before quant-trading (0.6)
+    assert results[0].chunk_text == "ml chunk"
     assert results[0].score == 0.85
-    assert results[1].chunk_text == "video chunk"
+    assert results[1].chunk_text == "quant chunk"
     assert results[1].score == 0.6
 
 
@@ -323,10 +321,14 @@ def test_query_all_collections_default_collections(
 
     mock_vs_cls.side_effect = lambda config: store_side_effect(config)
 
-    iface = KBQueryInterface()
-    iface.query_all_collections("test")
+    with patch(
+        "personal_knowledge_base.interface.query.KBQueryInterface._load_collection_ids",
+        return_value=["quant-trading", "ml-ai", "general"],
+    ):
+        iface = KBQueryInterface()
+        iface.query_all_collections("test")
 
-    assert set(searched_collections) == {"videos", "papers", "code", "general"}
+    assert set(searched_collections) == {"quant-trading", "ml-ai", "general"}
 
 
 @patch("personal_knowledge_base.interface.query.asyncio.run")
@@ -341,7 +343,7 @@ def test_query_all_collections_skips_failing_collection(
 
     def store_side_effect(config: Any) -> MagicMock:
         mock_store = MagicMock()
-        if config.collection_name == "code":
+        if config.collection_name == "quant-trading":
             mock_store.connect.side_effect = ConnectionError("Qdrant unreachable")
         else:
             mock_store.search.return_value = [make_search_result(score=0.75)]
@@ -350,9 +352,9 @@ def test_query_all_collections_skips_failing_collection(
     mock_vs_cls.side_effect = lambda config: store_side_effect(config)
 
     iface = KBQueryInterface()
-    results = iface.query_all_collections("test", collections=["general", "code"])
+    results = iface.query_all_collections("test", collections=["general", "quant-trading"])
 
-    # Only results from "general" — "code" was skipped
+    # Only results from "general" — "quant-trading" was skipped
     assert all(r.collection == "general" for r in results)
 
 
@@ -393,7 +395,7 @@ def test_format_results_basic() -> None:
             score=0.7,
             source="docs/other.md",
             doc_id="d2",
-            collection="papers",
+            collection="ml-ai",
         ),
     ]
     iface = KBQueryInterface()
@@ -489,7 +491,7 @@ def test_default_config_when_none() -> None:
 
 
 def test_custom_config_stored() -> None:
-    cfg = QueryConfig(default_collection="videos", default_limit=3)
+    cfg = QueryConfig(default_collection="quant-trading", default_limit=3)
     iface = KBQueryInterface(config=cfg)
-    assert iface.config.default_collection == "videos"
+    assert iface.config.default_collection == "quant-trading"
     assert iface.config.default_limit == 3

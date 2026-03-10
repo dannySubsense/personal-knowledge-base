@@ -86,7 +86,9 @@ _STOP_WORDS = {
 
 _CONNECTORS = {"and", "or", "with", "using", "about", "for"}
 
-DEFAULT_COLLECTIONS = ["videos", "papers", "code", "general"]
+DEFAULT_COLLECTIONS = ["quant-trading", "ml-ai", "general"]
+
+_FALLBACK_COLLECTIONS: list[str] = ["quant-trading", "ml-ai", "general"]
 
 
 @dataclass
@@ -100,6 +102,7 @@ class SuggestionsConfig:
         max_suggestions: Maximum number of suggestions to return.
         min_score: Minimum relevance score for related content.
         gap_threshold: Score below this value is considered a knowledge gap.
+        db_path: Path to the PKB metadata SQLite database used by KBRegistry.
     """
 
     qdrant_url: str = "http://localhost:6333"
@@ -108,6 +111,7 @@ class SuggestionsConfig:
     max_suggestions: int = 5
     min_score: float = 0.3
     gap_threshold: float = 0.5
+    db_path: str = "~/pkb-data/pkb_metadata.db"
 
 
 @dataclass
@@ -166,18 +170,39 @@ class SuggestionsEngine:
     # Public API
     # ------------------------------------------------------------------
 
+    def _load_collection_ids(self) -> list[str]:
+        """Load KB ids from KBRegistry, falling back to the default list.
+
+        Returns:
+            List of KB id strings.
+        """
+        try:
+            from personal_knowledge_base.kb.registry import KBRegistry
+
+            registry = KBRegistry(db_path=self.config.db_path)
+            kbs = registry.list_kbs()
+            if kbs:
+                return [kb.id for kb in kbs]
+        except Exception:  # noqa: BLE001
+            pass
+        return list(_FALLBACK_COLLECTIONS)
+
     def suggest(self, query: str, collections: list[str] | None = None) -> SuggestionResult:
         """Generate suggestions for a query.
 
+        If ``collections`` is ``None``, KB ids are loaded from :class:`KBRegistry`
+        (using ``db_path`` from config).  Falls back to
+        ``["quant-trading", "ml-ai", "general"]`` when the registry is unavailable.
+
         Args:
             query: The topic or question to explore.
-            collections: Collections to search. Defaults to DEFAULT_COLLECTIONS.
+            collections: Collections to search. Defaults to all KBs in registry.
 
         Returns:
             SuggestionResult with related content and identified gaps.
         """
         if collections is None:
-            collections = DEFAULT_COLLECTIONS
+            collections = self._load_collection_ids()
 
         embedder = OllamaEmbedder(
             EmbedderConfig(

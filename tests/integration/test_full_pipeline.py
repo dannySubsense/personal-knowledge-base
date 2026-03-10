@@ -157,7 +157,7 @@ class TestFullIngestionPipeline:
 
             # Wire up classifier mock
             mock_classifier_inst = MagicMock()
-            mock_classifier_inst.classify.return_value = "papers"
+            mock_classifier_inst.classify.return_value = "ml-ai"
             mock_classifier_cls.return_value = mock_classifier_inst
 
             # Wire up Qdrant mock
@@ -231,13 +231,13 @@ class TestQueryPipeline:
             mock_store.disconnect = MagicMock()
             mock_vectorstore_cls.return_value = mock_store
 
-            iface = KBQueryInterface(QueryConfig(default_collection="papers"))
+            iface = KBQueryInterface(QueryConfig(default_collection="quant-trading"))
             results = iface.query(question)
 
         assert len(results) == 2
         assert results[0].score == 0.91
         assert results[1].score == 0.83
-        assert results[0].collection == "papers"
+        assert results[0].collection == "quant-trading"
         # Embedder was called with the question
         mock_emb.embed_text.assert_awaited_once_with(question)
         # VectorStore was searched with the returned embedding
@@ -254,12 +254,12 @@ class TestQueryPipeline:
             score=0.78,
             source="https://arxiv.org/abs/2201.00001",
             doc_id="doc-123",
-            collection="papers",
+            collection="quant-trading",
         )
         iface = KBQueryInterface()
         text = iface.format_results([qr])
         assert "0.778" in text or "0.780" in text or "0.78" in text
-        assert "papers" in text
+        assert "quant-trading" in text
         assert "arxiv.org" in text
 
 
@@ -274,33 +274,31 @@ class TestCrossCollectionQuery:
 
     def test_results_merged_and_sorted_by_score(self) -> None:
         """Results from all collections are merged and sorted descending."""
-        video_hits = [
+        quant_hits = [
             _make_search_result(
-                "Neural nets video lecture.", score=0.72, source="https://youtube.com/v1"
+                "Factor model backtesting strategy.", score=0.72, source="https://quantopian.com/1"
             )
         ]
-        paper_hits = [
+        ml_hits = [
             _make_search_result(
                 "Attention is all you need.", score=0.95, source="https://arxiv.org/abs/1706"
-            )
-        ]
-        code_hits = [
-            _make_search_result(
-                "PyTorch transformer implementation.", score=0.81, source="https://github.com/r/t"
             )
         ]
         general_hits: list[SearchResult] = []
 
         collection_hits = {
-            "videos": video_hits,
-            "papers": paper_hits,
-            "code": code_hits,
+            "quant-trading": quant_hits,
+            "ml-ai": ml_hits,
             "general": general_hits,
         }
 
         with (
             patch("personal_knowledge_base.interface.query.OllamaEmbedder") as mock_embedder_cls,
             patch("personal_knowledge_base.interface.query.VectorStore") as mock_vectorstore_cls,
+            patch(
+                "personal_knowledge_base.interface.query.KBQueryInterface._load_collection_ids",
+                return_value=["quant-trading", "ml-ai", "general"],
+            ),
         ):
             mock_emb = AsyncMock()
             mock_emb.embed_text = AsyncMock(return_value=_FAKE_EMBEDDING)
@@ -321,13 +319,12 @@ class TestCrossCollectionQuery:
             iface = KBQueryInterface()
             results = iface.query_all_collections("neural networks")
 
-        assert len(results) == 3  # general returned empty
+        assert len(results) == 2  # general returned empty
         # Should be sorted descending by score
         scores = [r.score for r in results]
         assert scores == sorted(scores, reverse=True)
         assert results[0].score == 0.95
-        assert results[1].score == 0.81
-        assert results[2].score == 0.72
+        assert results[1].score == 0.72
 
 
 # ---------------------------------------------------------------------------
@@ -336,31 +333,86 @@ class TestCrossCollectionQuery:
 
 
 class TestContentClassificationRouting:
-    """Scenario 4: URLs are routed to the correct KB collection."""
+    """Scenario 4: URLs are routed to the correct topic KB."""
 
-    def test_youtube_url_classified_as_videos(self) -> None:
+    def test_quant_url_classified_as_quant_trading(self) -> None:
+        """URL with quant/trading/finance signals → quant-trading (URL hint tier)."""
         classifier = ContentClassifier(config=ClassifierConfig())
-        assert classifier.classify("https://www.youtube.com/watch?v=dQw4w9WgXcQ") == "videos"
+        assert (
+            classifier.classify("https://quantopian.com/research/factor-models") == "quant-trading"
+        )
 
-    def test_youtu_be_url_classified_as_videos(self) -> None:
+    def test_finance_url_classified_as_quant_trading(self) -> None:
+        """URL containing 'finance' → quant-trading via URL hint."""
         classifier = ContentClassifier(config=ClassifierConfig())
-        assert classifier.classify("https://youtu.be/dQw4w9WgXcQ") == "videos"
+        assert (
+            classifier.classify("https://alphaarchitect.com/finance/factor-investing")
+            == "quant-trading"
+        )
 
-    def test_arxiv_url_classified_as_papers(self) -> None:
-        classifier = ContentClassifier(config=ClassifierConfig())
-        assert classifier.classify("https://arxiv.org/abs/2301.00001") == "papers"
+    def test_youtube_trading_video_classified_as_quant_trading(self) -> None:
+        """YouTube video about trading → quant-trading via content similarity."""
+        with patch.object(ContentClassifier, "_embed") as mock_embed:
+            # Simulate embedder returning vectors: quant-trading description scores highest
+            quant_vector = [1.0, 0.0, 0.0]
+            mock_embed.return_value = quant_vector
 
-    def test_github_url_classified_as_code(self) -> None:
-        classifier = ContentClassifier(config=ClassifierConfig())
-        assert classifier.classify("https://github.com/huggingface/transformers") == "code"
+            classifier = ContentClassifier(config=ClassifierConfig(similarity_threshold=0.3))
+            # Patch _desc_embeddings to control similarity outcome
+            classifier._desc_embeddings = {
+                "quant-trading": [1.0, 0.0, 0.0],  # cosine = 1.0
+                "ml-ai": [0.0, 1.0, 0.0],  # cosine = 0.0
+                "general": [0.0, 0.0, 1.0],  # cosine = 0.0
+            }
+            result = classifier.classify(
+                url="https://www.youtube.com/watch?v=abc123",
+                title="Introduction to quantitative trading strategies",
+                description="Learn factor models and backtesting",
+            )
+        assert result == "quant-trading"
+
+    def test_arxiv_ml_paper_classified_as_ml_ai(self) -> None:
+        """arXiv paper about ML → ml-ai via content similarity."""
+        with patch.object(ContentClassifier, "_embed") as mock_embed:
+            ml_vector = [0.0, 1.0, 0.0]
+            mock_embed.return_value = ml_vector
+
+            classifier = ContentClassifier(config=ClassifierConfig(similarity_threshold=0.3))
+            classifier._desc_embeddings = {
+                "quant-trading": [1.0, 0.0, 0.0],  # cosine = 0.0
+                "ml-ai": [0.0, 1.0, 0.0],  # cosine = 1.0
+                "general": [0.0, 0.0, 1.0],  # cosine = 0.0
+            }
+            result = classifier.classify(
+                url="https://arxiv.org/abs/2301.00001",
+                title="Attention Is All You Need: Transformer Models for NLP",
+                description="Deep learning transformer architecture for sequence modelling",
+            )
+        assert result == "ml-ai"
+
+    def test_github_ml_repo_classified_as_ml_ai(self) -> None:
+        """GitHub ML repo → ml-ai via content similarity."""
+        with patch.object(ContentClassifier, "_embed") as mock_embed:
+            ml_vector = [0.0, 1.0, 0.0]
+            mock_embed.return_value = ml_vector
+
+            classifier = ContentClassifier(config=ClassifierConfig(similarity_threshold=0.3))
+            classifier._desc_embeddings = {
+                "quant-trading": [1.0, 0.0, 0.0],
+                "ml-ai": [0.0, 1.0, 0.0],
+                "general": [0.0, 0.0, 1.0],
+            }
+            result = classifier.classify(
+                url="https://github.com/huggingface/transformers",
+                title="Transformers: State-of-the-art Machine Learning for PyTorch and TF",
+                description="Thousands of pretrained models for NLP, vision and audio",
+            )
+        assert result == "ml-ai"
 
     def test_unknown_url_classified_by_content_similarity(self) -> None:
         """Unknown URL falls through to Tier-2 embedding similarity or general fallback."""
         with patch.object(ContentClassifier, "_embed") as mock_embed:
-            # Simulate embedder returning the same vector for everything
-            # so cosine similarity = 1.0 for all collections; first match wins or
-            # the classifier returns whichever collection beats the threshold.
-            # We return a unit vector pointing towards "general"-like content.
+            # Zero embeddings → cosine similarity = 0.0 < threshold → falls back to general
             mock_embed.return_value = [0.0] * _EMBEDDING_DIM
 
             classifier = ContentClassifier(config=ClassifierConfig(similarity_threshold=0.3))
@@ -369,12 +421,7 @@ class TestContentClassificationRouting:
                 title="Random blog post",
                 description="",
             )
-        # With zero embeddings cosine similarity is 0.0 < threshold → falls back to general
         assert result == "general"
-
-    def test_pdf_url_classified_as_papers(self) -> None:
-        classifier = ContentClassifier(config=ClassifierConfig())
-        assert classifier.classify("https://university.edu/papers/2024/paper.pdf") == "papers"
 
 
 # ---------------------------------------------------------------------------
@@ -509,11 +556,11 @@ class TestSuggestionPipeline:
                     text="Backpropagation explained.",
                     source="related",
                     score=0.82,
-                    collection="videos",
+                    collection="ml-ai",
                 )
             ],
             gaps=[
-                Suggestion(text="vanishing gradient", source="gap", score=0.25, collection="papers")
+                Suggestion(text="vanishing gradient", source="gap", score=0.25, collection="ml-ai")
             ],
         )
         formatted = engine.format_suggestions(fake_result)
@@ -583,7 +630,7 @@ class TestBatchProcessorErrorRecovery:
 
                 # Classifier
                 mock_cls = MagicMock()
-                mock_cls.classify.return_value = "papers"
+                mock_cls.classify.return_value = "ml-ai"
                 mock_classifier_cls.return_value = mock_cls
 
                 # Qdrant

@@ -21,6 +21,7 @@ class QueryConfig:
         default_limit: Default number of results to return.
         default_score_threshold: Minimum similarity score for results.
         default_collection: Default collection to search.
+        db_path: Path to the PKB metadata SQLite database used by KBRegistry.
     """
 
     qdrant_url: str = "http://localhost:6333"
@@ -29,6 +30,7 @@ class QueryConfig:
     default_limit: int = 10
     default_score_threshold: float = 0.3
     default_collection: str = "general"
+    db_path: str = "~/pkb-data/pkb_metadata.db"
 
 
 @dataclass
@@ -52,14 +54,15 @@ class QueryResult:
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
+_FALLBACK_COLLECTIONS: list[str] = ["quant-trading", "ml-ai", "general"]
+
+
 class KBQueryInterface:
     """Semantic search interface for the personal knowledge base.
 
     Provides methods to query single or multiple collections and format
     results as readable text suitable for use in conversations.
     """
-
-    DEFAULT_COLLECTIONS: list[str] = ["videos", "papers", "code", "general"]
 
     def __init__(self, config: QueryConfig | None = None) -> None:
         """Initialize the query interface.
@@ -185,6 +188,23 @@ class KBQueryInterface:
         query_vector = asyncio.run(self._embed_question(question))
         return self._search_collection(query_vector, collection, limit, score_threshold)
 
+    def _load_collection_ids(self) -> list[str]:
+        """Load KB ids from KBRegistry, falling back to the default list.
+
+        Returns:
+            List of KB id strings.
+        """
+        try:
+            from personal_knowledge_base.kb.registry import KBRegistry
+
+            registry = KBRegistry(db_path=self.config.db_path)
+            kbs = registry.list_kbs()
+            if kbs:
+                return [kb.id for kb in kbs]
+        except Exception:  # noqa: BLE001
+            pass
+        return list(_FALLBACK_COLLECTIONS)
+
     def query_all_collections(
         self,
         question: str,
@@ -193,17 +213,20 @@ class KBQueryInterface:
     ) -> list[QueryResult]:
         """Search across multiple collections, merge and re-rank by score.
 
+        If ``collections`` is ``None``, KB ids are loaded from :class:`KBRegistry`
+        (using ``db_path`` from config).  Falls back to
+        ``["quant-trading", "ml-ai", "general"]`` when the registry is unavailable.
+
         Args:
             question: The question or query text.
-            collections: Collections to search. Defaults to
-                ["videos", "papers", "code", "general"].
+            collections: Collections to search. Defaults to all KBs in registry.
             limit_per_collection: Maximum results per collection.
 
         Returns:
             Merged list of QueryResult objects sorted by score descending.
         """
         if collections is None:
-            collections = list(self.DEFAULT_COLLECTIONS)
+            collections = self._load_collection_ids()
 
         query_vector = asyncio.run(self._embed_question(question))
 
