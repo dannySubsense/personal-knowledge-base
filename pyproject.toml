@@ -128,10 +128,10 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --cov=personal_knowledge_base --cov-report=term-missing"
 
 [tool.coverage.run]
-source = ["src"]
+source = ["personal_knowledge_base"]
 branch = true
 
 [tool.coverage.report]
