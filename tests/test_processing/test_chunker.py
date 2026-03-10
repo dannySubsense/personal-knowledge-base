@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.processing.chunker import Chunk, Chunker, ChunkingConfig, ContentType
+from personal_knowledge_base.processing.chunker import Chunk, Chunker, ChunkingConfig, ContentType
 
 
 class TestChunkingConfig:

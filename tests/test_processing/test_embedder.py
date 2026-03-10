@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import aiohttp
 import pytest
 
-from src.processing.embedder import (
+from personal_knowledge_base.processing.embedder import (
     EmbedderConfig,
     EmbeddingResult,
     OllamaEmbedder,

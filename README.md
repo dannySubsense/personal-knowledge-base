@@ -20,6 +20,9 @@ The Personal Knowledge Base (PKB) addresses the pain point of scattered bookmark
 git clone https://github.com/dannySubsense/personal-knowledge-base.git
 cd personal-knowledge-base
 
+# Start Qdrant (vector database)
+docker-compose up -d qdrant
+
 # Install dependencies
 pip install -r requirements.txt
 
@@ -36,13 +39,13 @@ python scripts/batch_processor.py --daemon
 ## Architecture
 
 ```
-WhatsApp → Queue → Fetch → Extract → Chunk → Embed → Chroma → Query
+WhatsApp → Queue → Fetch → Extract → Chunk → Embed → Qdrant → Query
 ```
 
 **Components:**
 - **Ingestion:** WhatsApp handler, priority queue (SQLite)
 - **Processing:** Playwright fetcher, content-specific extractors, Ollama embeddings
-- **Storage:** Chroma vector DB, SQLite metadata, filesystem assets
+- **Storage:** Qdrant vector DB, SQLite metadata, filesystem assets
 - **Query:** LangChain RAG, hybrid search, staleness detection
 
 ## Project Structure
@@ -52,11 +55,11 @@ personal-knowledge-base/
 ├── src/
 │   ├── ingestion/          # Queue, fetchers, handlers
 │   ├── processing/         # Extractors, chunkers, embedders
-│   ├── storage/            # Chroma, SQLite interfaces
+│   ├── storage/            # Qdrant, SQLite interfaces
 │   ├── query/              # RAG, retrieval, ranking
 │   └── interface/          # WhatsApp, API, CLI
 ├── data/
-│   ├── chroma/             # Vector database
+│   ├── qdrant/             # Vector database (managed by Qdrant server)
 │   ├── sqlite/             # Metadata and queue
 │   ├── images/             # Stored images
 │   ├── pdfs/               # Original PDFs
@@ -110,9 +113,9 @@ ollama:
 
 queue:
   batch_interval_minutes: 15
-  
+
 storage:
-  chroma_path: ./data/chroma
+  qdrant_url: http://localhost:6333
   sqlite_path: ./data/sqlite/pkb.db
 ```
 

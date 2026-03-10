@@ -15,7 +15,7 @@ license = {text = "MIT"}
 authors = [
     {name = "Danny", email = "danny@example.com"}
 ]
-keywords = ["knowledge-base", "rag", "semantic-search", "ollama", "chroma"]
+keywords = ["knowledge-base", "rag", "semantic-search", "ollama", "qdrant"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
@@ -26,7 +26,6 @@ classifiers = [
 ]
 
 dependencies = [
-    "chromadb>=0.4.0",
     "langchain>=0.1.0",
     "langchain-community>=0.0.10",
     "playwright>=1.40.0",
@@ -34,6 +33,7 @@ dependencies = [
     "PyPDF2>=3.0.0",
     "pdfplumber>=0.10.0",
     "trafilatura>=1.6.0",
+    "qdrant-client==1.17.0",
 ]
 
 [project.optional-dependencies]
@@ -100,10 +100,11 @@ check_untyped_defs = true
 warn_redundant_casts = true
 warn_unused_ignores = true
 show_error_codes = true
+mypy_path = "src"
+explicit_package_bases = true
 
 [[tool.mypy.overrides]]
 module = [
-    "chromadb.*",
     "langchain.*",
     "langchain_community.*",
     "playwright.*",
@@ -111,8 +112,15 @@ module = [
     "PyPDF2.*",
     "pdfplumber.*",
     "trafilatura.*",
+    "qdrant_client.*",
 ]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = [
+    "personal_knowledge_base.fetchers.*",
+]
+ignore_errors = true
 
 [tool.pytest.ini_options]
 minversion = "7.0"
